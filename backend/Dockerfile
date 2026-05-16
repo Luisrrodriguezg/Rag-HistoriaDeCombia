@@ -21,8 +21,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 
 # Resolve and install dependencies into a local virtualenv.
+# Note: we go via a tempfile because the default shell is /bin/sh, which
+# does not support process substitution `<(...)`.
 RUN uv venv /opt/venv \
- && VIRTUAL_ENV=/opt/venv uv pip install --no-cache --requirement <(uv pip compile pyproject.toml --quiet)
+ && uv pip compile pyproject.toml --quiet -o /tmp/requirements.txt \
+ && VIRTUAL_ENV=/opt/venv uv pip install --no-cache --requirement /tmp/requirements.txt
 
 # ────────────────────────────────────────────────────────────
 # Stage 2: minimal runtime image.

@@ -128,7 +128,16 @@ async def verify_token(token: str) -> AuthenticatedUser:
 
     sub = claims.get("sub")
     if not sub:
-        raise InvalidJWT("Token is missing `sub` claim.")
+        log.warning("JWT missing sub. Full claims: %s", claims)
+        raise InvalidJWT(
+            "Token is missing `sub` claim.",
+            details={
+                "claim_keys": sorted(claims.keys()),
+                "iss": claims.get("iss"),
+                "azp": claims.get("azp"),
+                "typ": claims.get("typ"),
+            },
+        )
 
     realm_access = claims.get("realm_access") or {}
     roles: list[str] = realm_access.get("roles", [])

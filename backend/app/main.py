@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import health
 from app.core.config import get_settings
+from app.core.db import init_db
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 
@@ -30,6 +31,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     log.info("Starting %s", settings.app_name)
+    await init_db()
     yield
     log.info("Stopping %s", settings.app_name)
 

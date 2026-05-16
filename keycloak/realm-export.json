@@ -50,6 +50,7 @@
       },
       "fullScopeAllowed": true,
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "profile",
         "roles",

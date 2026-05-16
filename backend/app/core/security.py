@@ -126,11 +126,17 @@ async def verify_token(token: str) -> AuthenticatedUser:
             details={"iss": issuer, "expected_any_of": list(accepted_issuers)},
         )
 
-    sub = claims.get("sub")
+    # Keycloak 25+ moved the `sub` claim into the `basic` client scope. If
+    # that scope is not added to the client's defaultClientScopes, access
+    # tokens come without `sub` even though the user is fully authenticated.
+    # We fix the realm (see realm-export.json) to include `basic`, but keep
+    # `preferred_username` as a fallback identifier since it is also unique
+    # within a realm.
+    sub = claims.get("sub") or claims.get("preferred_username")
     if not sub:
-        log.warning("JWT missing sub. Full claims: %s", claims)
+        log.warning("JWT missing both sub and preferred_username. Claims: %s", claims)
         raise InvalidJWT(
-            "Token is missing `sub` claim.",
+            "Token is missing both `sub` and `preferred_username` claims.",
             details={
                 "claim_keys": sorted(claims.keys()),
                 "iss": claims.get("iss"),

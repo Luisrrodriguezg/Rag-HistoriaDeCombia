@@ -60,41 +60,60 @@ async def _llm_invoke(prompt: str) -> str:
 
 
 async def retrieve_node(state: AgentState, *, session: AsyncSession) -> AgentState:
-    """Embed the question and pull the top-k similar chunks above threshold."""
+    """Embed the question and pull the top-k similar chunks above threshold.
+
+    All top-k candidates are logged (with similarity scores) before the
+    threshold filter is applied, so any retrieval issues are diagnosable from
+    `docker compose logs backend` alone.
+    """
     settings = get_settings()
     question = state["question"]
     embedding = await embed_query(question)
-    chunks = await chunk_repo.similarity_search(
+    candidates = await chunk_repo.similarity_search(
         session,
         query_embedding=embedding,
         k=settings.rag_top_k,
-        min_similarity=settings.rag_similarity_threshold,
     )
     log.info(
-        "retrieve: question='%s…' candidates_above_threshold=%d",
+        "retrieve: q='%s' top-%d similarities=%s",
         question[:60],
-        len(chunks),
+        settings.rag_top_k,
+        [f"{c.similarity:.3f}|{c.document_filename}" for c in candidates],
     )
-    return {"retrieved": chunks}
+    kept = [c for c in candidates if c.similarity >= settings.rag_similarity_threshold]
+    log.info(
+        "retrieve: kept %d/%d above threshold=%.2f",
+        len(kept),
+        len(candidates),
+        settings.rag_similarity_threshold,
+    )
+    return {"retrieved": kept}
 
 
 async def grade_documents_node(state: AgentState) -> AgentState:
     """LLM-based relevance filter on top of similarity ranking.
 
-    This is a second line of defence: pgvector already returned high-similarity
-    chunks, but lexical overlap can still mislead. The LLM here is asked a
-    very simple yes/no question to keep latency low.
+    Per-chunk verdicts are logged so the user can spot a too-strict grader.
     """
     retrieved = state.get("retrieved") or []
     if not retrieved:
         return {"relevant": []}
 
     relevant: list = []
-    for chunk in retrieved:
+    for i, chunk in enumerate(retrieved):
         verdict = await _llm_invoke(
             GRADE_DOC_PROMPT.format(question=state["question"], document=chunk.content)
         )
-        if verdict.strip().lower().startswith("y"):
+        ok = verdict.strip().lower().startswith("y")
+        log.info(
+            "grade_documents: [%d] sim=%.3f file=%s verdict=%r -> %s",
+            i,
+            chunk.similarity,
+            chunk.document_filename,
+            verdict[:40],
+            "KEEP" if ok else "drop",
+        )
+        if ok:
             relevant.append(chunk)
     log.info("grade_documents: kept=%d/%d", len(relevant), len(retrieved))
     return {"relevant": relevant}
@@ -119,6 +138,7 @@ async def generate_node(state: AgentState) -> AgentState:
             question=state["question"],
         )
     )
+    log.info("generate: answer[:120]=%r", answer[:120])
     return {"generation": answer}
 
 
@@ -129,6 +149,7 @@ async def grade_generation_node(state: AgentState) -> AgentState:
 
     # If the model already self-refused, accept it without another LLM call.
     if REFUSAL_MESSAGE.strip()[:60] in generation:
+        log.info("grade_generation: model self-refused, skipping grounding check")
         return {"is_grounded": False, "generation": REFUSAL_MESSAGE}
 
     context = "\n\n---\n\n".join(c.content for c in relevant)
@@ -136,7 +157,7 @@ async def grade_generation_node(state: AgentState) -> AgentState:
         GROUNDING_PROMPT.format(context=context, answer=generation)
     )
     grounded = verdict.strip().lower().startswith("y")
-    log.info("grade_generation: grounded=%s", grounded)
+    log.info("grade_generation: verdict=%r -> grounded=%s", verdict[:40], grounded)
     if not grounded:
         return {"is_grounded": False, "generation": REFUSAL_MESSAGE}
     return {"is_grounded": True}

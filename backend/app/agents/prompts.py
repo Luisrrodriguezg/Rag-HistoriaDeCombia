@@ -14,16 +14,20 @@ REFUSAL_MESSAGE = (
 
 # Document grading prompt.
 # Contract: returns either the literal "yes" or the literal "no".
-GRADE_DOC_PROMPT = """Eres un evaluador estricto de relevancia de documentos.
+# Tone is intentionally inclusive: false negatives (dropping a useful chunk)
+# hurt more than false positives — the grounding check downstream is the
+# real safety net.
+GRADE_DOC_PROMPT = """Evalúa si el siguiente fragmento de documento podría ser ÚTIL
+para responder la pregunta del usuario. Sé generoso: si el fragmento toca el tema
+de la pregunta aunque sea parcialmente, responde "yes".
 
-Pregunta del usuario:
+Pregunta:
 {question}
 
-Fragmento de documento:
+Fragmento:
 {document}
 
-¿El fragmento contiene información que ayude DIRECTAMENTE a responder la pregunta?
-Responde únicamente con una palabra: "yes" o "no". No agregues nada más."""
+Responde únicamente con la palabra "yes" o la palabra "no", sin explicación."""
 
 
 # Answer generation prompt.
@@ -50,14 +54,18 @@ Respuesta:"""
 
 # Grounding verification prompt.
 # Contract: returns "yes" or "no".
-GROUNDING_PROMPT = """Eres un verificador. Determina si la respuesta del asistente está
-respaldada ÚNICAMENTE por la información del contexto provisto.
+# Tolerates reformulation and paraphrasing (Llama 3.1 8B can be overly strict
+# when the answer doesn't repeat the context verbatim).
+GROUNDING_PROMPT = """Verifica si la respuesta del asistente es CONSISTENTE con el
+contexto provisto. Tolera reformulaciones, paráfrasis y resúmenes — lo importante es
+que la respuesta no contradiga el contexto ni introduzca hechos completamente ausentes
+de él.
 
 Contexto:
 {context}
 
-Respuesta del asistente:
+Respuesta:
 {answer}
 
-¿Cada afirmación de la respuesta está respaldada por el contexto?
-Responde únicamente con "yes" o "no"."""
+Responde únicamente "yes" si la respuesta es consistente con el contexto, o "no" si
+contradice o inventa información. Sin explicación."""

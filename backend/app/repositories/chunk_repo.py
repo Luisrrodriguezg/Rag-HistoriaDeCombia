@@ -30,9 +30,12 @@ async def similarity_search(
     *,
     query_embedding: list[float],
     k: int,
-    min_similarity: float,
 ) -> list[RetrievedChunk]:
-    """Return the top-`k` chunks above `min_similarity`."""
+    """Return the top-`k` chunks by cosine similarity, unfiltered.
+
+    Threshold filtering happens in the caller (`retrieve_node`) so it can log
+    *all* candidates — including those below the threshold — for diagnostics.
+    """
     distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
     stmt = (
         select(
@@ -48,18 +51,13 @@ async def similarity_search(
     )
     rows = (await session.execute(stmt)).all()
 
-    out: list[RetrievedChunk] = []
-    for row in rows:
-        similarity = 1.0 - float(row.distance)
-        if similarity < min_similarity:
-            continue
-        out.append(
-            RetrievedChunk(
-                chunk_id=str(row.id),
-                document_id=str(row.document_id),
-                document_filename=row.filename,
-                content=row.content,
-                similarity=similarity,
-            )
+    return [
+        RetrievedChunk(
+            chunk_id=str(row.id),
+            document_id=str(row.document_id),
+            document_filename=row.filename,
+            content=row.content,
+            similarity=1.0 - float(row.distance),
         )
-    return out
+        for row in rows
+    ]

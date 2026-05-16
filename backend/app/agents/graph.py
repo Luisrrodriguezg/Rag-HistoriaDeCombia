@@ -21,6 +21,7 @@ internals private to this module.
 from __future__ import annotations
 
 import logging
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -74,6 +75,8 @@ async def run_agent(*, question: str, session: AsyncSession) -> dict:
     The DB session is injected into the `retrieve` node by wrapping the
     compiled graph behind a small adapter that re-runs `retrieve` manually.
     """
+    started = time.monotonic()
+
     # Step 1: retrieval needs the session — do it outside the graph.
     initial: AgentState = {"question": question}
     retrieve_update = await retrieve_node(initial, session=session)
@@ -91,6 +94,13 @@ async def run_agent(*, question: str, session: AsyncSession) -> dict:
     else:
         state = {**state, **(await generate_node(state))}
         state = {**state, **(await grade_generation_node(state))}
+
+    elapsed = time.monotonic() - started
+    log.info(
+        "run_agent: completed in %.1fs grounded=%s",
+        elapsed,
+        bool(state.get("is_grounded")),
+    )
 
     relevant = state.get("relevant") or []
     sources = [

@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from langchain_ollama import ChatOllama
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.prompts import (
     ANSWER_PROMPT,
-    GRADE_DOC_PROMPT,
+    GRADE_DOCS_BATCH_PROMPT,
     GROUNDING_PROMPT,
     REFUSAL_MESSAGE,
 )
@@ -90,32 +91,64 @@ async def retrieve_node(state: AgentState, *, session: AsyncSession) -> AgentSta
     return {"retrieved": kept}
 
 
-async def grade_documents_node(state: AgentState) -> AgentState:
-    """LLM-based relevance filter on top of similarity ranking.
+_GRADE_LINE_RE = re.compile(r"^\s*(\d+)\s*[:.\-)]\s*(yes|no|si|sí|y|n)\b", re.IGNORECASE)
 
-    Per-chunk verdicts are logged so the user can spot a too-strict grader.
+
+def _parse_batch_verdicts(text: str, n: int) -> list[bool]:
+    """Parse the batched grader's output into N booleans.
+
+    Defaults missing entries to True so a malformed model response degrades
+    to "keep everything" (anti-hallucination is still enforced downstream by
+    grade_generation), instead of dropping every chunk and forcing a refusal.
+    """
+    verdicts: dict[int, bool] = {}
+    for line in text.splitlines():
+        m = _GRADE_LINE_RE.match(line)
+        if not m:
+            continue
+        idx = int(m.group(1)) - 1
+        if 0 <= idx < n:
+            verdicts[idx] = m.group(2).lower()[0] in {"y", "s"}
+    return [verdicts.get(i, True) for i in range(n)]
+
+
+async def grade_documents_node(state: AgentState) -> AgentState:
+    """Single batched LLM call to grade every retrieved chunk at once.
+
+    Replaces N sequential LLM calls (one per chunk). Drops total agent
+    latency on CPU-bound Ollama from ~7 LLM calls to ~3 per question.
     """
     retrieved = state.get("retrieved") or []
     if not retrieved:
         return {"relevant": []}
 
-    relevant: list = []
-    for i, chunk in enumerate(retrieved):
-        verdict = await _llm_invoke(
-            GRADE_DOC_PROMPT.format(question=state["question"], document=chunk.content)
+    fragments = "\n\n".join(
+        f"[{i + 1}]\n{chunk.content}" for i, chunk in enumerate(retrieved)
+    )
+    verdict_text = await _llm_invoke(
+        GRADE_DOCS_BATCH_PROMPT.format(
+            question=state["question"],
+            fragments=fragments,
         )
-        ok = verdict.strip().lower().startswith("y")
+    )
+    verdicts = _parse_batch_verdicts(verdict_text, len(retrieved))
+
+    relevant: list = []
+    for i, (chunk, keep) in enumerate(zip(retrieved, verdicts, strict=True)):
         log.info(
-            "grade_documents: [%d] sim=%.3f file=%s verdict=%r -> %s",
+            "grade_documents: [%d] sim=%.3f file=%s -> %s",
             i,
             chunk.similarity,
             chunk.document_filename,
-            verdict[:40],
-            "KEEP" if ok else "drop",
+            "KEEP" if keep else "drop",
         )
-        if ok:
+        if keep:
             relevant.append(chunk)
-    log.info("grade_documents: kept=%d/%d", len(relevant), len(retrieved))
+    log.info(
+        "grade_documents: kept=%d/%d (batched 1 LLM call)",
+        len(relevant),
+        len(retrieved),
+    )
     return {"relevant": relevant}
 
 

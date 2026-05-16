@@ -12,22 +12,26 @@ REFUSAL_MESSAGE = (
 )
 
 
-# Document grading prompt.
-# Contract: returns either the literal "yes" or the literal "no".
-# Tone is intentionally inclusive: false negatives (dropping a useful chunk)
-# hurt more than false positives — the grounding check downstream is the
-# real safety net.
-GRADE_DOC_PROMPT = """Evalúa si el siguiente fragmento de documento podría ser ÚTIL
-para responder la pregunta del usuario. Sé generoso: si el fragmento toca el tema
-de la pregunta aunque sea parcialmente, responde "yes".
+# Document grading prompt — batched.
+# Contract: model returns one line per fragment in the form `N: yes` / `N: no`.
+# A single LLM call replaces what used to be N calls (one per chunk), cutting
+# end-to-end latency by an order of magnitude on CPU-bound Ollama.
+GRADE_DOCS_BATCH_PROMPT = """Evalúa si cada uno de los siguientes fragmentos podría
+ser ÚTIL para responder la pregunta del usuario. Sé generoso: si un fragmento toca
+el tema de la pregunta aunque sea parcialmente, márcalo como "yes".
 
 Pregunta:
 {question}
 
-Fragmento:
-{document}
+Fragmentos:
+{fragments}
 
-Responde únicamente con la palabra "yes" o la palabra "no", sin explicación."""
+Para cada fragmento responde en UNA línea con su número seguido de "yes" o "no", sin
+explicación. Formato exacto, sin viñetas ni texto adicional:
+1: yes
+2: no
+3: yes
+..."""
 
 
 # Answer generation prompt.

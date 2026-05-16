@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
-import { getToken, refreshToken, login } from "@/lib/auth";
+import { getToken, refreshToken } from "@/lib/auth";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -21,7 +21,17 @@ api.interceptors.response.use(
   (resp) => resp,
   (error) => {
     if (error?.response?.status === 401) {
-      login();
+      // Don't auto-redirect to Keycloak on every 401 — when the backend has
+      // a JWT-verification bug this produces an infinite "looks like a
+      // refresh" loop that hides the real error. Page-level handlers will
+      // surface a toast; the user can manually log in again if needed.
+      // eslint-disable-next-line no-console
+      console.error(
+        "API 401",
+        error.config?.method?.toUpperCase(),
+        error.config?.url,
+        error.response?.data
+      );
     }
     return Promise.reject(error);
   }

@@ -7,6 +7,9 @@ Agente inteligente con arquitectura **RAG** (Retrieval-Augmented Generation) sob
 
 > **Trabajo final** · Asignatura: *Implementación de Software*
 > **Autores:** Luis Rodríguez · Simón Gómez
+>
+> **Estás en la rama `metal`** — Ollama corre en el host con aceleración Metal/GPU.
+> Si quieres la versión 100 % dockerizada (más portable, más lenta), usa `main`.
 
 ---
 
@@ -42,11 +45,26 @@ React ──Bearer JWT──► FastAPI ──► LangGraph
 
 ---
 
-## 3. Requisitos previos
+## 3. Requisitos previos (rama `metal`)
 
-- **Docker Desktop** con al menos **8 GB de RAM** asignados al engine
-  (Settings → Resources). Llama 3.1 en CPU lo necesita.
-- No es necesario instalar Ollama, Node o Python en el host: todo corre en contenedores.
+Esta rama saca Ollama del compose y lo corre en el host para aprovechar **Metal/GPU**
+en Apple Silicon. Inferencia ~5-10× más rápida que la versión dockerizada de `main`.
+
+- **Docker Desktop** con ≥ 4 GB de RAM (ya no hace falta tanto porque Ollama no vive aquí).
+- **Ollama instalado en el host** desde https://ollama.com (la app del menú-bar funciona).
+- Modelos descargados localmente:
+  ```bash
+  ollama pull llama3.1:8b
+  ollama pull nomic-embed-text
+  ```
+- Ollama debe escuchar en `0.0.0.0:11434` para que los contenedores lleguen vía
+  `host.docker.internal`. Si usaste la app del menú-bar, **mátala** y arranca con:
+  ```bash
+  launchctl unload ~/Library/LaunchAgents/com.ollama.ollama.plist 2>/dev/null
+  killall Ollama 2>/dev/null
+  OLLAMA_HOST=0.0.0.0:11434 ollama serve
+  ```
+  Verifica con `curl http://localhost:11434/api/tags` desde otra terminal.
 
 ---
 
@@ -57,12 +75,8 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-La primera ejecución descarga `llama3.1:8b` (≈ 4.7 GB) y `nomic-embed-text` (≈ 275 MB) mediante el
-servicio efímero `ollama-init`. Puede tomar **5-10 minutos** la primera vez:
-
-```bash
-docker compose logs -f ollama-init
-```
+Ya no hay servicio `ollama-init`: los modelos están en el host y persisten en
+`~/.ollama/models`.
 
 Una vez completado:
 
@@ -129,7 +143,7 @@ Ver `.env.example`. Las claves más relevantes:
 | `DATABASE_URL` | `postgresql+asyncpg://rag:rag@db:5432/rag` | Conexión a Postgres |
 | `KEYCLOAK_INTERNAL_JWKS_URL` | `http://keycloak:8080/realms/rag/protocol/openid-connect/certs` | JWKS interno |
 | `KEYCLOAK_EXTERNAL_ISSUER` | `http://localhost:8080/realms/rag` | `iss` esperado en el JWT |
-| `OLLAMA_BASE_URL` | `http://ollama:11434` | Endpoint Ollama dentro de la red Docker |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Endpoint del Ollama del host (rama `metal`) |
 | `OLLAMA_LLM_MODEL` | `llama3.1:8b` | Modelo de generación |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Modelo de embeddings |
 | `RAG_SIMILARITY_THRESHOLD` | `0.65` | Umbral mínimo de similitud coseno |

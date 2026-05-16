@@ -41,19 +41,19 @@ curl --silent --fail "http://localhost:8080/realms/rag/.well-known/openid-config
   && ok "Keycloak realm 'rag' is reachable" \
   || fail "Keycloak realm 'rag' did not respond"
 
-note "Checking Ollama API…"
+note "Checking host-side Ollama API…"
 curl --silent --fail "http://localhost:11434/api/tags" >/dev/null \
-  && ok "Ollama API responds" \
-  || fail "Ollama API is not responding"
+  && ok "Ollama API responds on the host" \
+  || fail "Host Ollama is not responding on :11434. Start it with: OLLAMA_HOST=0.0.0.0:11434 ollama serve"
 
 note "Checking Ollama models are pulled…"
 MODELS_JSON="$(curl --silent http://localhost:11434/api/tags)"
 echo "$MODELS_JSON" | grep -q "\"$LLM_MODEL\"" \
   && ok "LLM model '$LLM_MODEL' is available" \
-  || fail "LLM model '$LLM_MODEL' is NOT pulled. Run: docker compose run --rm ollama-init"
+  || fail "LLM model '$LLM_MODEL' is NOT pulled. Run on the host: ollama pull $LLM_MODEL"
 
 echo "$MODELS_JSON" | grep -q "\"$EMBED_MODEL\"" \
   && ok "Embedding model '$EMBED_MODEL' is available" \
-  || fail "Embedding model '$EMBED_MODEL' is NOT pulled. Run: docker compose run --rm ollama-init"
+  || fail "Embedding model '$EMBED_MODEL' is NOT pulled. Run on the host: ollama pull $EMBED_MODEL"
 
 printf "\n${GREEN}Stack is healthy.${NC}\n"

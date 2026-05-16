@@ -54,29 +54,13 @@ services:
       - rag-net
 
   # ──────────────────────────────────────────────────────────
-  # Ollama — runs the local LLM (llama3.1) and the embedding
-  # model (nomic-embed-text). Models are pulled by the
-  # `ollama-init` one-shot service below.
-  # ──────────────────────────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: rag-ollama
-    restart: unless-stopped
-    volumes:
-      - ollama_models:/root/.ollama
-    ports:
-      - "11434:11434"
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-    networks:
-      - rag-net
-
-  # ──────────────────────────────────────────────────────────
   # Backend — FastAPI, LangChain/LangGraph agent.
+  #
+  # NOTE: this branch (`metal`) runs Ollama OUTSIDE Docker so the LLM can
+  # use Metal/GPU acceleration on Apple Silicon. The backend reaches the
+  # host-side Ollama via `host.docker.internal:11434`. Make sure Ollama
+  # is running on the host (`ollama serve` or the menu-bar app) and
+  # listening on 0.0.0.0:11434 — see the metal-mode section of the README.
   # ──────────────────────────────────────────────────────────
   backend:
     build:
@@ -91,8 +75,11 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
-      ollama:
-        condition: service_healthy
+    extra_hosts:
+      # On Docker Desktop (Mac/Windows) `host.docker.internal` already
+      # resolves; this mapping is harmless there and makes the compose file
+      # also work on plain Linux Docker engines.
+      - "host.docker.internal:host-gateway"
     volumes:
       - docs_storage:/data/docs
     ports:
@@ -130,34 +117,9 @@ services:
     networks:
       - rag-net
 
-  # ──────────────────────────────────────────────────────────
-  # Ollama bootstrap — pulls llama3.1:8b and nomic-embed-text
-  # on first boot, then exits. Subsequent runs are no-ops
-  # because the models are cached in the `ollama_models`
-  # volume.
-  # ──────────────────────────────────────────────────────────
-  ollama-init:
-    image: ollama/ollama:latest
-    container_name: rag-ollama-init
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        echo "Pulling LLM model: ${OLLAMA_LLM_MODEL:-llama3.1:8b}" &&
-        OLLAMA_HOST=http://ollama:11434 ollama pull ${OLLAMA_LLM_MODEL:-llama3.1:8b} &&
-        echo "Pulling embedding model: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}" &&
-        OLLAMA_HOST=http://ollama:11434 ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text} &&
-        echo "All models pulled successfully."
-    restart: "no"
-    networks:
-      - rag-net
-
 volumes:
   pgdata:
   kc_data:
-  ollama_models:
   docs_storage:
 
 networks:

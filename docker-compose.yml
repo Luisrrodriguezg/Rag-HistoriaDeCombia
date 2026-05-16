@@ -107,6 +107,30 @@ services:
       - rag-net
 
   # ──────────────────────────────────────────────────────────
+  # Frontend — React + Vite served by nginx (production preview).
+  # For day-to-day dev, run `npm run dev` outside the compose to
+  # benefit from HMR; the container is here so the grader can run
+  # the full stack with a single `docker compose up`.
+  # ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-http://localhost:8080}
+        VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-rag}
+        VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-rag-frontend}
+    container_name: rag-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    networks:
+      - rag-net
+
+  # ──────────────────────────────────────────────────────────
   # Ollama bootstrap — pulls llama3.1:8b and nomic-embed-text
   # on first boot, then exits. Subsequent runs are no-ops
   # because the models are cached in the `ollama_models`

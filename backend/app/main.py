@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health
+from app.api.routes import auth, documents, health
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.exceptions import register_exception_handlers
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(documents.router)
 
     return app
 

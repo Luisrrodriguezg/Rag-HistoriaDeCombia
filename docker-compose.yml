@@ -1,0 +1,109 @@
+name: rag-historia-colombia
+
+services:
+  # ──────────────────────────────────────────────────────────
+  # Postgres with pgvector — single store for relational
+  # metadata AND vector embeddings.
+  # ──────────────────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rag-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - rag-net
+
+  # ──────────────────────────────────────────────────────────
+  # Keycloak — OIDC provider for user registration, login,
+  # logout and JWT issuing. Realm is imported on first boot.
+  # ──────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: rag-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - kc_data:/opt/keycloak/data
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - rag-net
+
+  # ──────────────────────────────────────────────────────────
+  # Ollama — runs the local LLM (llama3.1) and the embedding
+  # model (nomic-embed-text). Models are pulled by the
+  # `ollama-init` one-shot service below.
+  # ──────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - rag-net
+
+  # ──────────────────────────────────────────────────────────
+  # Ollama bootstrap — pulls llama3.1:8b and nomic-embed-text
+  # on first boot, then exits. Subsequent runs are no-ops
+  # because the models are cached in the `ollama_models`
+  # volume.
+  # ──────────────────────────────────────────────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: rag-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        echo "Pulling LLM model: ${OLLAMA_LLM_MODEL:-llama3.1:8b}" &&
+        OLLAMA_HOST=http://ollama:11434 ollama pull ${OLLAMA_LLM_MODEL:-llama3.1:8b} &&
+        echo "Pulling embedding model: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}" &&
+        OLLAMA_HOST=http://ollama:11434 ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text} &&
+        echo "All models pulled successfully."
+    restart: "no"
+    networks:
+      - rag-net
+
+volumes:
+  pgdata:
+  kc_data:
+  ollama_models:
+
+networks:
+  rag-net:
+    driver: bridge

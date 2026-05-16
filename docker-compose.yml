@@ -76,6 +76,37 @@ services:
       - rag-net
 
   # ──────────────────────────────────────────────────────────
+  # Backend — FastAPI, LangChain/LangGraph agent.
+  # ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rag-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    volumes:
+      - docs_storage:/data/docs
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8000/health\").status==200 else 1)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks:
+      - rag-net
+
+  # ──────────────────────────────────────────────────────────
   # Ollama bootstrap — pulls llama3.1:8b and nomic-embed-text
   # on first boot, then exits. Subsequent runs are no-ops
   # because the models are cached in the `ollama_models`
@@ -103,6 +134,7 @@ volumes:
   pgdata:
   kc_data:
   ollama_models:
+  docs_storage:
 
 networks:
   rag-net:

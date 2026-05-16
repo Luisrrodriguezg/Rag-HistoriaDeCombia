@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Send, AlertTriangle, BookOpen } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Send, AlertTriangle, BookOpen, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,10 +17,48 @@ interface Turn {
   loading?: boolean;
 }
 
+const STORAGE_KEY = "rag-chat-turns";
+
+function loadPersistedTurns(): Turn[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Turn[];
+    // Discard any turn that was still loading when we last unmounted — its
+    // request will not complete in this component instance, and a permanent
+    // "Pensando…" bubble is worse than losing the prompt.
+    return parsed.filter((t) => !t.loading);
+  } catch {
+    return [];
+  }
+}
+
 export function ChatWindow() {
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(loadPersistedTurns);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Persist on every mutation so navigating to Documentos and back preserves
+  // the conversation. Quota errors (extremely unlikely for chat text) are
+  // swallowed silently.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(turns));
+    } catch {
+      /* quota — ignore */
+    }
+  }, [turns]);
+
+  function clearChat() {
+    if (turns.length === 0 || sending) return;
+    if (!confirm("¿Borrar la conversación actual?")) return;
+    setTurns([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,7 +113,18 @@ export function ChatWindow() {
         </ScrollArea>
       </CardContent>
 
-      <form onSubmit={onSubmit} className="border-t p-3 flex gap-2">
+      <form onSubmit={onSubmit} className="border-t p-3 flex gap-2 items-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={clearChat}
+          disabled={sending || turns.length === 0}
+          title="Limpiar conversación"
+          aria-label="Limpiar conversación"
+        >
+          <Eraser className="h-4 w-4" />
+        </Button>
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

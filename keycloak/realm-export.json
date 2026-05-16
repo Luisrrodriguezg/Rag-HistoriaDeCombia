@@ -1,6 +1,7 @@
 {
   "realm": "rag",
   "enabled": true,
+  "sslRequired": "none",
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": true,

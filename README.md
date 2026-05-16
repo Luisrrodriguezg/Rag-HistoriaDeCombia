@@ -50,33 +50,74 @@ React ──Bearer JWT──► FastAPI ──► LangGraph
 Esta rama saca Ollama del compose y lo corre en el host para aprovechar **Metal/GPU**
 en Apple Silicon. Inferencia ~5-10× más rápida que la versión dockerizada de `main`.
 
-- **Docker Desktop** con ≥ 4 GB de RAM (ya no hace falta tanto porque Ollama no vive aquí).
-- **Ollama instalado en el host** desde https://ollama.com (la app del menú-bar funciona).
-- Modelos descargados localmente:
-  ```bash
-  ollama pull llama3.1:8b
-  ollama pull nomic-embed-text
-  ```
-- Ollama debe escuchar en `0.0.0.0:11434` para que los contenedores lleguen vía
-  `host.docker.internal`. Si usaste la app del menú-bar, **mátala** y arranca con:
-  ```bash
-  launchctl unload ~/Library/LaunchAgents/com.ollama.ollama.plist 2>/dev/null
-  killall Ollama 2>/dev/null
-  OLLAMA_HOST=0.0.0.0:11434 ollama serve
-  ```
-  Verifica con `curl http://localhost:11434/api/tags` desde otra terminal.
+- **macOS** con Apple Silicon (M1/M2/M3/M4). Probablemente funcione en Intel pero sin Metal.
+- **Docker Desktop** con ≥ 4 GB de RAM al engine (ya no hace falta tanto porque Ollama
+  no vive aquí).
+- **Ollama instalado en el host** — ver paso 4.1.
 
 ---
 
-## 4. Ejecución
+## 4. Puesta en marcha (paso a paso)
 
+### 4.1 Instalar Ollama en el host
+
+Una de las dos opciones, no ambas:
+
+**a) Homebrew (recomendado, solo CLI/servidor — sin app del menú-bar):**
 ```bash
-cp .env.example .env
-docker compose up -d --build
+brew install ollama
 ```
 
-Ya no hay servicio `ollama-init`: los modelos están en el host y persisten en
-`~/.ollama/models`.
+**b) DMG con app de menú-bar:** descarga `Ollama.app` de https://ollama.com/download,
+muévela a `/Applications` y ábrela una vez para que registre el binario `ollama` en
+`/usr/local/bin`. Luego ciérrala — vas a correr `ollama serve` manualmente con un bind
+distinto.
+
+Verifica:
+```bash
+which ollama        # → /opt/homebrew/bin/ollama  (brew) o /usr/local/bin/ollama
+ollama --version
+```
+
+### 4.2 Arrancar Ollama bind a 0.0.0.0
+
+Los contenedores acceden al host vía `host.docker.internal`, que NO es loopback.
+Ollama por defecto escucha solo en `127.0.0.1`, así que hay que cambiar el bind:
+
+```bash
+# Si tenías la app del menú-bar abierta, ciérrala antes:
+killall Ollama 2>/dev/null
+launchctl unload ~/Library/LaunchAgents/com.ollama.ollama.plist 2>/dev/null
+
+# Arranca el server escuchando en todas las interfaces. DEJA esta terminal abierta.
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+```
+
+Smoke test desde **otra terminal**:
+```bash
+curl http://localhost:11434/api/tags
+# → {"models":[]}   (vacío al principio, eso está bien)
+```
+
+### 4.3 Descargar los modelos
+
+En otra terminal (la primera la dejas con `ollama serve` viva):
+```bash
+ollama pull llama3.1:8b           # ≈ 4.7 GB
+ollama pull nomic-embed-text      # ≈ 275 MB
+```
+
+Persisten en `~/.ollama/models`, no se redescargan en el siguiente arranque.
+
+### 4.4 Levantar el stack
+
+```bash
+cp .env.example .env              # solo la primera vez
+docker compose up -d --build
+./scripts/check-stack.sh          # debe responder todo en verde
+```
+
+Si `check-stack.sh` falla en Ollama, vuelve al paso 4.2.
 
 Una vez completado:
 
@@ -86,11 +127,9 @@ Una vez completado:
 | API (Swagger) | http://localhost:8000/docs |
 | Keycloak admin | http://localhost:8080  (admin / admin) |
 
-Verificación rápida de salud del stack:
-
-```bash
-./scripts/check-stack.sh
-```
+> **Nota:** el `KEYCLOAK_PORT` por defecto es 8080. Si en tu máquina ese puerto está ocupado
+> (`docker ps | grep 8080`), edita `.env` y pon p.ej. `KEYCLOAK_PORT=8085` junto con
+> `VITE_KEYCLOAK_URL=http://localhost:8085` y `KEYCLOAK_EXTERNAL_ISSUER=http://localhost:8085/realms/rag`.
 
 ### Usuario de prueba
 
@@ -188,22 +227,43 @@ rag-historia-colombia/
 
 ---
 
-## 9. Troubleshooting
+## 9. Troubleshooting (rama `metal`)
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| `pgvector extension not installed` al arrancar el backend | El volumen `pgdata` fue creado antes de añadir `db/init.sql` | `docker compose down -v && docker compose up -d` |
-| El chat tarda > 30 s en responder | Inferencia en CPU (sin GPU) | Esperado; mover Ollama a host con Metal lo acelera ~5× |
-| `401 INVALID_JWT` constante | Reloj del contenedor desfasado o realm mal importado | `docker compose restart keycloak` y revisar `KEYCLOAK_INTERNAL_JWKS_URL` |
-| Modelos no se descargan | Servicio `ollama-init` falló | `docker compose run --rm ollama-init` (reintenta el pull manualmente) |
+| `zsh: command not found: ollama` | Ollama no está instalado en el host | `brew install ollama` (o instala el `.dmg` y abre la app una vez) |
+| `check-stack.sh`: "Host Ollama is not responding on :11434" | El server no está corriendo, o quedó bindeado a `127.0.0.1` | Mata cualquier instancia previa (`killall Ollama`) y vuelve a arrancar con `OLLAMA_HOST=0.0.0.0:11434 ollama serve` |
+| `LLMUnavailable` / `EmbeddingError` desde el backend | El contenedor no llega a `host.docker.internal:11434` | Confirma con `docker compose exec backend curl http://host.docker.internal:11434/api/tags`. Si responde "Connection refused", el bind sigue siendo loopback — repite el paso 4.2. |
+| `pgvector extension not installed` | El volumen `pgdata` se creó antes de existir `db/init.sql` | `docker compose down -v && docker compose up -d` (¡esto sí borra los chunks!) |
+| `401 INVALID_JWT` con `Token is missing sub claim` | Estás en una versión anterior al fix del scope `basic` | Pull de la rama, recrea Keycloak: `docker compose down && docker volume rm rag-historia-colombia_kc_data && docker compose up -d` |
+| `Bind for 0.0.0.0:8080 failed: port is already allocated` | Otra app ocupa 8080 | En `.env` cambia `KEYCLOAK_PORT`, `VITE_KEYCLOAK_URL` y `KEYCLOAK_EXTERNAL_ISSUER` al mismo puerto alternativo |
+| El chat sigue lento aunque Ollama está en host | `ollama serve` está corriendo en CPU (Rosetta / shell x86) | `arch` debe responder `arm64`; abre la terminal nativa, no la x86 |
 
 ---
 
-## 10. Limitaciones conocidas
+## 10. Limitaciones conocidas (rama `metal`)
 
-- Llama 3.1 8B en CPU está al límite de respuestas conversacionales — para producción se
-  recomienda mover Ollama al host con Metal/GPU o usar un modelo más pequeño (`llama3.2:3b`,
-  `gemma2:2b`).
+- Requiere host macOS con Apple Silicon (M1/M2/M3/M4) para Metal real. En Intel funciona
+  igual pero sin aceleración GPU.
+- `ollama serve` corre como proceso de usuario: si reinicias el Mac hay que volver a
+  lanzarlo manualmente. Si quieres que arranque solo, `brew services start ollama` —
+  pero por defecto bindea a `127.0.0.1` y habría que ajustar el plist; para una demo de
+  clase la terminal dedicada es más simple.
 - No hay rate limiting en el endpoint `/chat`; un usuario malicioso podría saturar Ollama.
-- El grading de documentos y de la generación dispara una invocación LLM extra por fragmento;
-  para corpus grandes conviene reemplazarlo por un re-ranker cross-encoder.
+- El grading de la generación añade una invocación LLM por respuesta; para corpus grandes
+  conviene reemplazarlo por un re-ranker cross-encoder.
+
+---
+
+## 11. Volver a la rama `main` (versión 100 % dockerizada)
+
+```bash
+git checkout main
+# editar .env: OLLAMA_BASE_URL=http://ollama:11434
+docker compose down
+docker compose up -d --build
+```
+
+En `main`, Ollama vuelve a estar como servicio del compose con su volumen `ollama_models`.
+La inferencia será CPU-bound (más lenta) pero el stack levanta con un único comando sin
+prerrequisitos en el host.

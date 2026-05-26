@@ -152,6 +152,27 @@ El realm `rag` se importa con un usuario pre-cargado:
 
 También puedes registrarte desde el frontend (botón **Registrarse** en la pantalla de inicio).
 
+### Documentos de demo (`contexto/`)
+
+El repo incluye una carpeta `contexto/` con los PDFs en español sobre historia de Colombia
+que usamos para validar el agente: *Bogotazo, Patria Boba, Guerras Civiles, Conflicto Armado
+Interno, Presidentes (listado + biografías), Literatura, Constitución, Banco de la República*
+y un panorama general. Después del primer arranque, súbelos desde la pestaña **Documentos**
+del frontend para tener un corpus listo para preguntar — verás cada uno aparecer con su
+`chunk_count`.
+
+Verificación rápida tras la carga:
+
+```bash
+docker compose exec db psql -U rag -d rag -c \
+  "SELECT filename, COUNT(c.id) AS chunks
+   FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+   GROUP BY filename ORDER BY chunks DESC;"
+```
+
+> Si algún PDF aparece con `chunks = 0` casi seguro es un escaneo sin capa de texto y
+> `pypdf` no pudo extraer nada — re-súbelo desde una versión "nativa" del archivo.
+
 ### Aplicar cambios en `.env`
 
 `docker compose restart` **no** relee `.env`. Para que el backend tome variables modificadas:
@@ -230,6 +251,7 @@ Ver `.env.example`. Las claves más relevantes:
 rag-historia-colombia/
 ├── docker-compose.yml
 ├── .env.example
+├── contexto/                # PDFs de demo (historia de Colombia) listos para subir
 ├── db/init.sql              # CREATE EXTENSION vector
 ├── keycloak/realm-export.json
 ├── scripts/

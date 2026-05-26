@@ -1,4 +1,4 @@
-"""`chunks` table — text fragments + 768-dim embeddings (nomic-embed-text)."""
+"""`chunks` table — text fragments + 1024-dim embeddings (bge-m3)."""
 
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ from app.models.base import Base, TimestampMixin, UUIDPKMixin
 if TYPE_CHECKING:
     from app.models.document import Document
 
-# Dimensionality of `nomic-embed-text`. Centralised here so the index migration
-# and the embedding service stay in sync.
-EMBEDDING_DIM = 768
+# Dimensionality of `bge-m3`. Centralised here so the index migration and the
+# embedding service stay in sync. Changing this requires a re-index — see
+# core/db.py:init_db and scripts/reindex.py.
+EMBEDDING_DIM = 1024
 
 
 class Chunk(UUIDPKMixin, TimestampMixin, Base):

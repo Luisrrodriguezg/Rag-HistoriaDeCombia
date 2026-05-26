@@ -62,10 +62,85 @@ export interface DocumentItem {
   created_at: string;
 }
 
+export type AgentNode =
+  | "retrieve"
+  | "classify"
+  | "generate"
+  | "refuse_with_topics";
+
+export type StreamEvent =
+  | { type: "node_start"; node: AgentNode; label: string }
+  | {
+      type: "node_end";
+      node: AgentNode;
+      meta?: Record<string, unknown>;
+    }
+  | { type: "token"; value: string }
+  | {
+      type: "done";
+      answer: string;
+      grounded: boolean;
+      sources: ChatSource[];
+    }
+  | { type: "error"; message: string };
+
 export const chatApi = {
   ask: async (question: string): Promise<ChatResponse> =>
     (await api.post<ChatResponse>("/chat", { question })).data,
   history: async () => (await api.get("/chat/history")).data,
+
+  /**
+   * Stream the agent's answer token by token. Calls `onEvent` for every SSE
+   * event the backend emits (`token`, `done`, or `error`). The promise
+   * resolves when the stream closes; the caller should rely on the final
+   * `done` event for the authoritative answer + grounded flag + sources.
+   *
+   * EventSource isn't suitable here because it can't send `POST` bodies or
+   * `Authorization` headers; we read the body as a stream instead.
+   */
+  askStream: async (
+    question: string,
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    await refreshToken().catch(() => undefined);
+    const token = getToken();
+    const resp = await fetch(`${BASE_URL}/chat/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question }),
+      signal,
+    });
+    if (!resp.ok || !resp.body) {
+      throw new Error(`stream failed: HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE events are separated by a blank line.
+      let sepIdx: number;
+      while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+        const raw = buffer.slice(0, sepIdx);
+        buffer = buffer.slice(sepIdx + 2);
+        const line = raw.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        try {
+          const payload = JSON.parse(line.slice(5).trim()) as StreamEvent;
+          onEvent(payload);
+        } catch {
+          // ignore malformed line
+        }
+      }
+    }
+  },
 };
 
 export const documentsApi = {

@@ -2,21 +2,29 @@
 
 Each node returns a *partial* state update; LangGraph merges it with the
 current state. This keeps node bodies tiny and trivially testable.
+
+Flow:
+    retrieve → classify → (is_relevant ? generate : refuse_with_topics) → END
+
+Compared to the earlier 3-LLM-call design, we collapsed `grade_documents`
+(per-chunk yes/no) and `grade_generation` (post-hoc grounding check) into a
+single `classify` call that ALSO surfaces "topics we DO have" for the refusal
+path. This makes conversational queries like "háblame de Colombia" work,
+because relevance is judged holistically over the retrieved set rather than
+per-chunk.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import re
+from typing import AsyncIterator
 
 from langchain_ollama import ChatOllama
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.prompts import (
     ANSWER_PROMPT,
-    GRADE_DOCS_BATCH_PROMPT,
-    GROUNDING_PROMPT,
+    CLASSIFY_PROMPT,
     REFUSAL_MESSAGE,
 )
 from app.agents.state import AgentState
@@ -40,6 +48,8 @@ def _get_chat() -> ChatOllama:
             model=settings.ollama_llm_model,
             base_url=settings.ollama_base_url,
             temperature=0.0,
+            num_ctx=settings.ollama_num_ctx,
+            keep_alive=settings.ollama_keep_alive,
         )
     return _chat
 
@@ -47,12 +57,46 @@ def _get_chat() -> ChatOllama:
 async def _llm_invoke(prompt: str) -> str:
     chat = _get_chat()
     try:
-        msg = await asyncio.to_thread(chat.invoke, prompt)
+        msg = await chat.ainvoke(prompt)
     except Exception as exc:
         log.exception("LLM invocation failed")
         raise LLMUnavailable(details={"reason": str(exc)}) from exc
     content = getattr(msg, "content", str(msg))
     return content.strip()
+
+
+async def _llm_stream(prompt: str) -> AsyncIterator[str]:
+    """Yield text chunks as the model produces them."""
+    chat = _get_chat()
+    try:
+        async for chunk in chat.astream(prompt):
+            piece = getattr(chunk, "content", "") or ""
+            if piece:
+                yield piece
+    except Exception as exc:
+        log.exception("LLM streaming failed")
+        raise LLMUnavailable(details={"reason": str(exc)}) from exc
+
+
+def _format_history(history: list[dict] | None) -> str:
+    """Render prior turns as a labelled block, or empty string if none.
+
+    Empty string keeps the prompt clean when there is no history — no awkward
+    "Conversación previa: (ninguna)" header. When present, the block ends with
+    a trailing blank line so it sits cleanly above the next prompt section.
+    """
+    if not history:
+        return ""
+    lines: list[str] = ["Conversación previa (orden cronológico, la pregunta actual viene después):"]
+    for i, turn in enumerate(history, start=1):
+        q = (turn.get("question") or "").strip()
+        a = (turn.get("answer") or "").strip()
+        # Trim very long prior answers so a long thread doesn't blow up the
+        # prompt — first 400 chars is enough to recover pronoun antecedents.
+        if len(a) > 400:
+            a = a[:400].rstrip() + "…"
+        lines.append(f"[{i}] Usuario: {q}\n    Asistente: {a}")
+    return "\n".join(lines) + "\n\n"
 
 
 # ──────────────────────────────────────────────────────────
@@ -61,11 +105,11 @@ async def _llm_invoke(prompt: str) -> str:
 
 
 async def retrieve_node(state: AgentState, *, session: AsyncSession) -> AgentState:
-    """Embed the question and pull the top-k similar chunks above threshold.
+    """Embed the question and pull the top-k similar chunks.
 
-    All top-k candidates are logged (with similarity scores) before the
-    threshold filter is applied, so any retrieval issues are diagnosable from
-    `docker compose logs backend` alone.
+    Returns BOTH the full candidate list (`candidates`, unfiltered) and the
+    above-threshold subset (`retrieved`). The refuse path uses `candidates`
+    to surface "topics we DO have" even when nothing crossed the threshold.
     """
     settings = get_settings()
     question = state["question"]
@@ -88,114 +132,134 @@ async def retrieve_node(state: AgentState, *, session: AsyncSession) -> AgentSta
         len(candidates),
         settings.rag_similarity_threshold,
     )
-    return {"retrieved": kept}
+    return {"candidates": candidates, "retrieved": kept}
 
 
-_GRADE_LINE_RE = re.compile(r"^\s*(\d+)\s*[:.\-)]\s*(yes|no|si|sí|y|n)\b", re.IGNORECASE)
+def _parse_classify_verdict(text: str) -> tuple[bool, list[str]]:
+    """Parse the classify LLM output into (is_relevant, suggested_topics).
 
+    Accepted forms (case-insensitive, first non-empty line):
+        YES
+        NO: tema 1; tema 2; tema 3
 
-def _parse_batch_verdicts(text: str, n: int) -> list[bool]:
-    """Parse the batched grader's output into N booleans.
-
-    Defaults missing entries to True so a malformed model response degrades
-    to "keep everything" (anti-hallucination is still enforced downstream by
-    grade_generation), instead of dropping every chunk and forcing a refusal.
+    Tolerant of leading/trailing whitespace and trailing punctuation.
+    Anything that doesn't start with NO is treated as YES (bias toward
+    answering — the prompt itself tells the model to be generous).
     """
-    verdicts: dict[int, bool] = {}
-    for line in text.splitlines():
-        m = _GRADE_LINE_RE.match(line)
-        if not m:
-            continue
-        idx = int(m.group(1)) - 1
-        if 0 <= idx < n:
-            verdicts[idx] = m.group(2).lower()[0] in {"y", "s"}
-    return [verdicts.get(i, True) for i in range(n)]
+    line = next((l.strip() for l in text.splitlines() if l.strip()), "")
+    lower = line.lower()
+    if lower.startswith("no"):
+        _, _, rest = line.partition(":")
+        topics = [t.strip(" .;-").strip() for t in rest.split(";")]
+        topics = [t for t in topics if t]
+        return False, topics[:4]
+    return True, []
 
 
-async def grade_documents_node(state: AgentState) -> AgentState:
-    """Single batched LLM call to grade every retrieved chunk at once.
+async def classify_node(state: AgentState) -> AgentState:
+    """Single LLM call: is the retrieved context relevant to the question?
 
-    Replaces N sequential LLM calls (one per chunk). Drops total agent
-    latency on CPU-bound Ollama from ~7 LLM calls to ~3 per question.
+    When the verdict is NO, the same call extracts a short list of topics
+    from the context so the refusal can suggest what the user could ask
+    instead.
+
+    Edge case: when `retrieved` is empty (nothing above the similarity
+    threshold), we skip the LLM call entirely — the answer is trivially "no"
+    — and surface topics from the broader candidate set if any exist.
     """
     retrieved = state.get("retrieved") or []
-    if not retrieved:
-        return {"relevant": []}
+    candidates = state.get("candidates") or []
 
-    fragments = "\n\n".join(
-        f"[{i + 1}]\n{chunk.content}" for i, chunk in enumerate(retrieved)
+    if not retrieved:
+        # Below-threshold candidates can still hint at topics in the corpus.
+        topics = _topics_from_filenames(candidates)
+        log.info(
+            "classify: no chunks above threshold — skipping LLM. "
+            "fallback topics from filenames: %s",
+            topics,
+        )
+        return {"is_relevant": False, "suggested_topics": topics}
+
+    context = "\n\n---\n\n".join(
+        f"[{i + 1}] {c.content}" for i, c in enumerate(retrieved)
     )
     verdict_text = await _llm_invoke(
-        GRADE_DOCS_BATCH_PROMPT.format(
+        CLASSIFY_PROMPT.format(
+            history=_format_history(state.get("history")),
             question=state["question"],
-            fragments=fragments,
+            context=context,
         )
     )
-    verdicts = _parse_batch_verdicts(verdict_text, len(retrieved))
-
-    relevant: list = []
-    for i, (chunk, keep) in enumerate(zip(retrieved, verdicts, strict=True)):
-        log.info(
-            "grade_documents: [%d] sim=%.3f file=%s -> %s",
-            i,
-            chunk.similarity,
-            chunk.document_filename,
-            "KEEP" if keep else "drop",
-        )
-        if keep:
-            relevant.append(chunk)
+    is_relevant, topics = _parse_classify_verdict(verdict_text)
     log.info(
-        "grade_documents: kept=%d/%d (batched 1 LLM call)",
-        len(relevant),
-        len(retrieved),
+        "classify: verdict=%r -> is_relevant=%s topics=%s",
+        verdict_text[:80],
+        is_relevant,
+        topics,
     )
-    return {"relevant": relevant}
+    return {"is_relevant": is_relevant, "suggested_topics": topics}
+
+
+def _topics_from_filenames(chunks: list) -> list[str]:
+    """Last-ditch topic fallback: unique source filenames, stripped of ext."""
+    seen: list[str] = []
+    for c in chunks:
+        name = c.document_filename.rsplit(".", 1)[0]
+        if name not in seen:
+            seen.append(name)
+        if len(seen) >= 4:
+            break
+    return seen
 
 
 def decide_route(state: AgentState) -> str:
-    """Conditional edge selector."""
-    relevant = state.get("relevant") or []
-    return "generate" if relevant else "refuse"
+    """Conditional edge selector — picks between generate and refuse paths."""
+    return "generate" if state.get("is_relevant") else "refuse_with_topics"
 
 
 async def generate_node(state: AgentState) -> AgentState:
-    """Prompt the LLM to answer using ONLY the relevant context."""
-    relevant = state.get("relevant") or []
+    """Prompt the LLM to answer using the retrieved context (non-streaming)."""
+    relevant = state.get("retrieved") or []
     context = "\n\n---\n\n".join(
         f"[{i + 1}] {c.content}" for i, c in enumerate(relevant)
     )
     answer = await _llm_invoke(
         ANSWER_PROMPT.format(
             refusal=REFUSAL_MESSAGE,
+            history=_format_history(state.get("history")),
             context=context,
             question=state["question"],
         )
     )
     log.info("generate: answer[:120]=%r", answer[:120])
-    return {"generation": answer}
+    return {"generation": answer, "is_grounded": True}
 
 
-async def grade_generation_node(state: AgentState) -> AgentState:
-    """Final hallucination check — verify the answer is grounded in context."""
-    relevant = state.get("relevant") or []
-    generation = state.get("generation", "")
-
-    # If the model already self-refused, accept it without another LLM call.
-    if REFUSAL_MESSAGE.strip()[:60] in generation:
-        log.info("grade_generation: model self-refused, skipping grounding check")
-        return {"is_grounded": False, "generation": REFUSAL_MESSAGE}
-
-    context = "\n\n---\n\n".join(c.content for c in relevant)
-    verdict = await _llm_invoke(
-        GROUNDING_PROMPT.format(context=context, answer=generation)
+async def generate_node_stream(state: AgentState) -> AsyncIterator[str]:
+    """Streaming counterpart of `generate_node`."""
+    relevant = state.get("retrieved") or []
+    context = "\n\n---\n\n".join(
+        f"[{i + 1}] {c.content}" for i, c in enumerate(relevant)
     )
-    grounded = verdict.strip().lower().startswith("y")
-    log.info("grade_generation: verdict=%r -> grounded=%s", verdict[:40], grounded)
-    if not grounded:
-        return {"is_grounded": False, "generation": REFUSAL_MESSAGE}
-    return {"is_grounded": True}
+    prompt = ANSWER_PROMPT.format(
+        refusal=REFUSAL_MESSAGE,
+        history=_format_history(state.get("history")),
+        context=context,
+        question=state["question"],
+    )
+    async for piece in _llm_stream(prompt):
+        yield piece
 
 
-def refuse_node(_: AgentState) -> AgentState:
-    """Terminal node when there is no relevant context."""
-    return {"generation": REFUSAL_MESSAGE, "is_grounded": False}
+def refuse_with_topics_node(state: AgentState) -> AgentState:
+    """Compose the refusal message and append topic suggestions if any."""
+    topics = state.get("suggested_topics") or []
+    if topics:
+        topics_str = ", ".join(topics)
+        text = (
+            f"{REFUSAL_MESSAGE} Sin embargo, en mi base de conocimiento sí tengo "
+            f"información sobre: {topics_str}. ¿Quieres preguntar algo sobre alguno de estos?"
+        )
+    else:
+        text = REFUSAL_MESSAGE
+    return {"generation": text, "is_grounded": False}

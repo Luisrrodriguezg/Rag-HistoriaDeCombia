@@ -4,48 +4,53 @@
         ┌──────────────────────┐
         │ React + shadcn (Vite)│
         │  - Login/Register    │  ← Keycloak.js (PKCE)
-        │  - Chat              │
+        │  - Chat (SSE stream) │
         │  - Documentos        │
         └──────────┬───────────┘
                    │ Bearer JWT
                    ▼
         ┌──────────────────────┐         ┌──────────────┐
-        │  FastAPI (REST)      │◄────────│   Keycloak   │
+        │  FastAPI (REST + SSE)│◄────────│   Keycloak   │
         │  /documents          │  JWKS   │  realm: rag  │
         │  /chat               │         └──────────────┘
+        │  /chat/stream  (SSE) │
         │  /chat/history       │
         └──┬───────────────────┘
            │
            ▼
-   ┌────────────────────────────────────┐
-   │  LangGraph RAG Agent               │
-   │  ─── retrieve (pgvector cosine)    │
-   │  ─── grade_documents (LLM)         │
-   │  ─── decide (refuse | generate)    │
-   │  ─── generate (Llama 3.1)          │
-   │  ─── grade_generation (grounding)  │
-   │  ─── persist (chat_history)        │
-   └──────┬────────────┬────────────────┘
-          ▼            ▼
-   ┌─────────────┐  ┌───────────┐
-   │  Postgres   │  │   Ollama  │
-   │  + pgvector │  │  llama3.1 │
-   │ (container) │  │(container)│
-   └─────────────┘  └───────────┘
+   ┌────────────────────────────────────────────┐
+   │  LangGraph RAG Agent                       │
+   │   START → retrieve → classify              │
+   │            ├── (is_relevant) → generate    │
+   │            └── (¬relevant)   → refuse_+_topics
+   │   Cada nodo emite node_start / node_end    │
+   │   por SSE → trazabilidad en UI             │
+   └──┬─────────────────────────┬───────────────┘
+      ▼                         ▼
+   ┌─────────────┐         ┌─────────────────────────┐
+   │  Postgres   │         │ Ollama  (host, Metal/GPU)│
+   │ + pgvector  │         │  - qwen2.5:14b-q5_K_M    │
+   │  VECTOR(1024)│        │  - bge-m3 (embeddings)   │
+   └─────────────┘         └─────────────────────────┘
 ```
 
-Todos los servicios viven en la red Docker interna `rag-net`. El frontend (Vite dev
-server) corre fuera del compose en desarrollo y dentro de un contenedor nginx para
-"producción local".
+Cuatro contenedores (`db`, `keycloak`, `backend`, `frontend`) viven en la red Docker
+interna `rag-net`. **Ollama corre fuera de Docker, en el host**, para aprovechar la
+GPU de Apple Silicon vía Metal; el backend lo alcanza por `host.docker.internal:11434`.
 
 ## Decisiones clave
 
 - **Sin Alembic**: el esquema se crea con `SQLAlchemy Base.metadata.create_all` en el
   `lifespan` de FastAPI. La extensión `vector` se instala vía `db/init.sql` montado en
   `/docker-entrypoint-initdb.d/`.
-- **Ollama dockerizado**: trade-off conocido — sin Metal/GPU en Mac la inferencia corre
-  en CPU. Se acepta por reproducibilidad de la demo.
+- **Ollama en host (rama `metal`)**: trade-off conocido a favor de la GPU. Inferencia
+  100 % en Metal con `qwen2.5:14b-q5_K_M`; el modelo permanece caliente entre
+  peticiones gracias a `OLLAMA_KEEP_ALIVE=30m`.
 - **`pgvector` como vector store**: una sola DB para metadatos relacionales y
-  embeddings — menos superficie de fallo.
-- **Anti-alucinaciones**: 4 estrategias combinadas (umbral coseno, grading de
-  documentos, prompt restrictivo, grading de generación).
+  embeddings (1024-dim, `bge-m3`) — menos superficie de fallo.
+- **Una única compuerta LLM (`classify`)**: el grafo se simplificó de cinco a tres
+  nodos efectivos. El `classify` decide *en una sola llamada* si el contexto es
+  relevante y, si no lo es, extrae los temas del corpus para sugerirlos al usuario.
+- **Streaming SSE con trazabilidad**: el endpoint `/chat/stream` emite eventos
+  `node_start` / `node_end` / `token` / `done` que el frontend renderiza como una
+  lista de pasos en vivo junto a la respuesta.

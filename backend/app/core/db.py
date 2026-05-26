@@ -44,11 +44,27 @@ async def init_db() -> None:
     """Create tables and the pgvector index if they don't exist.
 
     Invoked from the FastAPI lifespan exactly once on startup.
+
+    When `RAG_RESET_VECTORS=1` is set, drops the chunks table and its IVFFlat
+    index before recreating them. This is required when the embedding model's
+    output dimensionality changes (e.g. nomic-embed-text 768 -> bge-m3 1024),
+    because pgvector indexes and `Vector(N)` columns are dimension-locked.
+    Document rows are kept; rerun `scripts/reindex.py` to rebuild chunks from
+    the on-disk files referenced by `documents.storage_path`.
     """
     async with engine.begin() as conn:
         # The extension itself is enabled by db/init.sql; this is a safety net
         # for environments that bypass docker-entrypoint-initdb.d (e.g. tests).
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+        if settings.rag_reset_vectors:
+            log.warning(
+                "RAG_RESET_VECTORS=1 — dropping chunks table and IVFFlat index. "
+                "Run scripts/reindex.py to repopulate."
+            )
+            await conn.execute(text("DROP INDEX IF EXISTS chunks_embedding_cosine_idx"))
+            await conn.execute(text("DROP TABLE IF EXISTS chunks"))
+
         await conn.run_sync(Base.metadata.create_all)
 
         # ivfflat index for cosine similarity searches. 100 lists is a safe

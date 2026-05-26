@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rag · Historia de Colombia — Presentación</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" id="theme" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css" />
+  <style>
+    :root {
+      --accent: #fbbf24;
+      --muted: #94a3b8;
+      --panel: #1f2937;
+    }
+    .reveal { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
+    .reveal h1, .reveal h2, .reveal h3 { color: #f3f4f6; text-transform: none; letter-spacing: -0.02em; }
+    .reveal h1 { font-size: 2.4em; line-height: 1.1; }
+    .reveal h2 { font-size: 1.8em; }
+    .reveal h3 { font-size: 1.3em; color: var(--accent); margin-bottom: .6em; }
+    .reveal p, .reveal li { font-size: 0.65em; line-height: 1.55; color: #e5e7eb; }
+    .reveal pre, .reveal code { font-size: 0.55em; }
+    .reveal pre { box-shadow: 0 8px 24px rgba(0,0,0,.4); border-radius: 8px; }
+    .reveal pre code { padding: 1.2em; }
+    .reveal .accent { color: var(--accent); }
+    .reveal .muted { color: var(--muted); }
+    .reveal .small { font-size: 0.5em; color: var(--muted); }
+    .reveal table { font-size: 0.55em; margin: 0 auto; }
+    .reveal table th { color: var(--accent); border-bottom: 2px solid var(--accent); padding: .4em .8em; }
+    .reveal table td { padding: .4em .8em; border-bottom: 1px solid #374151; }
+    .reveal .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em; text-align: left; }
+    .reveal .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; text-align: left; }
+    .reveal .pill {
+      display: inline-block;
+      background: var(--panel);
+      color: var(--accent);
+      padding: .2em .7em;
+      border-radius: 999px;
+      font-size: 0.55em;
+      margin: .15em;
+      border: 1px solid #374151;
+    }
+    .reveal .card {
+      background: var(--panel);
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 1em 1.2em;
+      text-align: left;
+    }
+    .reveal .card h3 { margin-top: 0; }
+    .reveal .ascii {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.4em;
+      text-align: left;
+      background: #0b0f19;
+      padding: 1em 1.2em;
+      border-radius: 8px;
+      color: #d1d5db;
+      white-space: pre;
+      line-height: 1.45;
+      border: 1px solid #1f2937;
+    }
+    .reveal section.title-slide {
+      text-align: center;
+    }
+    .reveal .footer-meta {
+      position: absolute;
+      bottom: 0.5em;
+      left: 1em;
+      right: 1em;
+      font-size: 0.45em;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .reveal ul { list-style: none; padding-left: 0; }
+    .reveal ul li { padding: .2em 0; }
+    .reveal ul li::before {
+      content: "▸ ";
+      color: var(--accent);
+      margin-right: .3em;
+    }
+    .reveal .demo-checklist li::before { content: "□ "; color: var(--accent); }
+    .reveal .screenshot {
+      max-width: 100%;
+      max-height: 62vh;
+      border-radius: 10px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.5);
+      border: 1px solid #374151;
+    }
+    .reveal .caption {
+      font-size: 0.45em;
+      color: var(--muted);
+      margin-top: .5em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- 1. Título -->
+      <section class="title-slide">
+        <h1>Rag · <span class="accent">Historia de Colombia</span></h1>
+        <p style="font-size: 0.75em;">Agente inteligente con LangChain, LangGraph y RAG</p>
+        <p style="margin-top: 2em; font-size: 0.55em;" class="muted">Trabajo Final — Implementación de Software · 2026</p>
+        <div class="footer-meta">
+          <span>Universidad EAFIT</span>
+          <span>presiona <code>→</code> para avanzar</span>
+        </div>
+      </section>
+
+      <!-- 2. Integrantes -->
+      <section>
+        <h2>Integrantes</h2>
+        <div class="grid-2" style="margin-top: 2em;">
+          <div class="card">
+            <h3>Luis Rodríguez</h3>
+            <p>Desarrollo del agente, integración LangChain/LangGraph y backend FastAPI.</p>
+          </div>
+          <div class="card">
+            <h3>Simón Gómez</h3>
+            <p>Frontend React, autenticación Keycloak, optimización de modelos y RAG.</p>
+          </div>
+        </div>
+        <p class="small" style="margin-top: 2em;">Materia: Implementación de Software</p>
+      </section>
+
+      <!-- 3. Problema -->
+      <section>
+        <h2>Problema</h2>
+        <div class="grid-2">
+          <div>
+            <h3>Lo que duele</h3>
+            <p>El conocimiento histórico de Colombia está disperso en enciclopedias, libros y artículos. Responder una pregunta puntual con respaldo requiere consultar varios documentos a mano.</p>
+          </div>
+          <div>
+            <h3>Lo que entrega el agente</h3>
+            <p>Un chatbot que <span class="accent">responde con citas verificables</span> sobre los documentos cargados, se niega a inventar cuando no hay contexto, y sugiere temas alternativos cuando la pregunta queda fuera del corpus.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Arquitectura -->
+      <section>
+        <h2>Arquitectura</h2>
+        <div class="ascii">┌──────────────────────┐
+│ React + shadcn (Vite)│ ← Keycloak.js (PKCE)
+│  · Chat (SSE stream) │
+│  · Documentos        │
+└──────────┬───────────┘
+           │ Bearer JWT
+           ▼
+┌──────────────────────┐         ┌──────────────┐
+│  FastAPI (REST + SSE)│◄────────│   Keycloak   │
+│  /chat/stream        │  JWKS   │   realm rag  │
+└──┬───────────────────┘         └──────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────────────┐
+│  LangGraph Agent                                │
+│   START → retrieve → classify                   │
+│            ├─ (relevant) → generate (stream)    │
+│            └─ (¬rel.)    → refuse_with_topics   │
+│   Cada nodo emite SSE → trazabilidad en UI      │
+└──┬────────────────────────┬────────────────────┘
+   ▼                        ▼
+┌───────────────┐   ┌─────────────────────────┐
+│ Postgres      │   │ Ollama (host Metal/GPU) │
+│ + pgvector    │   │   · qwen2.5:14b-q5_K_M  │
+│ VECTOR(1024)  │   │   · bge-m3 (embeddings) │
+└───────────────┘   └─────────────────────────┘</div>
+        <p class="small" style="margin-top: 1em;">4 contenedores Docker + Ollama en host (rama <code>metal</code>)</p>
+      </section>
+
+      <!-- 5. Tecnologías -->
+      <section>
+        <h2>Tecnologías</h2>
+        <table>
+          <thead>
+            <tr><th>Capa</th><th>Tecnología</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Frontend</td><td>React 18 · Vite · TypeScript · Tailwind · shadcn/ui</td></tr>
+            <tr><td>Backend</td><td>FastAPI · Pydantic 2 · SQLAlchemy 2 async</td></tr>
+            <tr><td>Streaming</td><td>FastAPI <code>StreamingResponse</code> (Server-Sent Events)</td></tr>
+            <tr><td>Agente</td><td>LangChain 0.3 · LangGraph 0.2</td></tr>
+            <tr><td>LLM</td><td>Ollama · <span class="accent">qwen2.5:14b-instruct-q5_K_M</span> (~10 GB, GPU)</td></tr>
+            <tr><td>Embeddings</td><td>Ollama · <span class="accent">bge-m3</span> (1024 dim, multilingüe)</td></tr>
+            <tr><td>Vector store</td><td>PostgreSQL 16 + pgvector (<code>VECTOR(1024)</code>, ivfflat cosine)</td></tr>
+            <tr><td>Auth</td><td>Keycloak 25 · OIDC · PKCE</td></tr>
+            <tr><td>Orquestación</td><td>Docker Compose v2</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 6. Agente -->
+      <section>
+        <h2>Agente con LangGraph</h2>
+        <div class="ascii">START → retrieve → classify → decide_route
+                                      ├── refuse_with_topics → END
+                                      └── generate (stream)  → END</div>
+        <div class="grid-3" style="margin-top: 1em;">
+          <div class="card">
+            <h3>retrieve</h3>
+            <p class="small">Embebe la pregunta con bge-m3 y trae los top-12 chunks de pgvector por similitud coseno.</p>
+          </div>
+          <div class="card">
+            <h3>classify</h3>
+            <p class="small">1 sola llamada al LLM. Decide relevancia y, si NO, extrae temas del corpus para sugerir.</p>
+          </div>
+          <div class="card">
+            <h3>generate / refuse</h3>
+            <p class="small">Streaming token-a-token con qwen2.5:14b, o ensamblaje sin LLM del mensaje de rechazo con sugerencias.</p>
+          </div>
+        </div>
+        <p class="small" style="margin-top: 1em;">Los últimos 3 turnos del usuario se inyectan como historia → follow-ups con pronombres funcionan.</p>
+      </section>
+
+      <!-- 7. Base vectorial + carga -->
+      <section>
+        <h2>Base vectorial y carga de documentos</h2>
+        <div class="grid-2">
+          <div>
+            <h3>pgvector</h3>
+            <ul>
+              <li>Postgres 16 con extensión <code>vector</code></li>
+              <li>Columna <code>VECTOR(1024)</code> en tabla <code>chunks</code></li>
+              <li>Índice <code>ivfflat</code> con <code>vector_cosine_ops</code> (100 listas)</li>
+              <li>Una sola BD para metadatos + embeddings</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Pipeline de carga</h3>
+            <ul>
+              <li>Upload <code>POST /documents</code> (multipart)</li>
+              <li>Extracción: pypdf · python-docx · UTF-8</li>
+              <li>Split 800 chars / 120 overlap</li>
+              <li>Embed con bge-m3 → vector 1024-d</li>
+              <li>Insert bulk en <code>chunks</code> con FK</li>
+            </ul>
+          </div>
+        </div>
+        <p class="small" style="margin-top: 1em;">Formatos soportados: <span class="pill">PDF</span><span class="pill">DOCX</span><span class="pill">TXT</span><span class="pill">MD</span></p>
+      </section>
+
+      <!-- 8. Seguridad -->
+      <section>
+        <h2>Seguridad y usuarios</h2>
+        <div class="grid-2">
+          <div>
+            <h3>Keycloak</h3>
+            <ul>
+              <li>Realm <code>rag</code> importado al boot</li>
+              <li>Cliente público <code>rag-frontend</code></li>
+              <li>Flujo Authorization Code + PKCE S256</li>
+              <li>Auto-registro habilitado, rol por defecto <code>user</code></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Backend</h3>
+            <ul>
+              <li>Validación RS256 contra JWKS (cache TTL)</li>
+              <li>Rotación lazy si aparece nuevo <code>kid</code></li>
+              <li>Todo endpoint excepto <code>/health</code> exige Bearer JWT</li>
+              <li>Sesión persiste, logout limpio desde UI</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. Control de alucinaciones -->
+      <section>
+        <h2>Control de alucinaciones <span class="muted">(4 estrategias)</span></h2>
+        <table>
+          <thead>
+            <tr><th>#</th><th>Estrategia</th><th>Capa</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>Umbral coseno mínimo (0.25)</td><td>retrieve</td></tr>
+            <tr><td>2</td><td>LLM <code>classify</code> verdict YES/NO con extracción de temas</td><td>classify</td></tr>
+            <tr><td>3</td><td>Prompt estricto: prohibido inventar nombres/fechas/cifras</td><td>generate</td></tr>
+            <tr><td>4</td><td>Auto-rechazo: el modelo emite el mensaje canónico si el contexto no sirve</td><td>generate</td></tr>
+          </tbody>
+        </table>
+        <p class="small" style="margin-top: 1.5em;">El prompt cierra explícitamente la rendija de los disclaimers (<em>"aunque no se menciona en tu contexto..."</em>) que permitía filtrar conocimiento paramétrico del modelo.</p>
+      </section>
+
+      <!-- 10. Demo: preguntas válidas + refusal con sugerencias -->
+      <section>
+        <h2>Demo — Preguntas con respuesta válida</h2>
+        <img src="Images/Image_1.png" alt="Conversación con agente sobre Bogotazo, presidentes y refusal con sugerencias" class="screenshot" />
+        <p class="caption">
+          "¿Qué fue el Bogotazo?" → respuesta con cita <code>[1]</code> ·
+          "Dame información de los presidentes" → lista verificable con citas <code>[2][3][10]</code> ·
+          "¿Y ellos jugaban fútbol?" → <span class="accent">refusal con temas alternativos del corpus</span>
+        </p>
+      </section>
+
+      <!-- 10b. Demo: follow-up con memoria conversacional -->
+      <section>
+        <h2>Demo — Refusal y follow-up con memoria</h2>
+        <img src="Images/Image_2.png" alt="Refusal sobre mundial del 94 y follow-up con pronombre sobre presidentes" class="screenshot" />
+        <p class="caption">
+          "¿Quién ganó el mundial del 94?" → refusal con sugerencias ·
+          "Los presidentes donde nacieron" → <span class="accent">follow-up sin sujeto explícito</span> que funciona gracias a los últimos 3 turnos inyectados al prompt.
+        </p>
+      </section>
+
+      <!-- 11. Conclusiones -->
+      <section>
+        <h2>Conclusiones</h2>
+        <ul>
+          <li><strong>Menos compuertas, mejor producto.</strong> Consolidamos <code>grade_documents</code> + <code>grade_generation</code> en una sola <code>classify</code>: menos refusals erróneas y menos latencia.</li>
+          <li><strong>El embedder es la palanca más importante.</strong> Cambiar de nomic-embed-text a bge-m3 (multilingüe) movió la calidad de recuperación más que cualquier ajuste del LLM.</li>
+          <li><strong>La trazabilidad SSE cambia la UX.</strong> Ver los nodos avanzar en vivo hace que ~5 s de latencia se sientan productivos.</li>
+          <li><strong>Hardware local con Metal es suficiente</strong> para un RAG interactivo de calidad — qwen2.5:14b-q5_K_M responde en ~1–2 s con 100 % GPU.</li>
+          <li><strong>Pendiente:</strong> despliegue en nube (rubric §10), CSV (§8), capturas de pantalla (§21).</li>
+        </ul>
+      </section>
+
+      <!-- Cierre -->
+      <section class="title-slide">
+        <h2>Gracias</h2>
+        <p style="font-size: 0.7em; margin-top: 1.5em;">¿Preguntas?</p>
+        <p class="small" style="margin-top: 3em;">Repositorio: <code>github.com/Luisrrodriguezg/Rag-HistoriaDeCombia</code></p>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      transition: 'slide',
+      slideNumber: 'c/t',
+      controls: true,
+      progress: true,
+      center: false,
+      plugins: [RevealHighlight],
+    });
+  </script>
+</body>
+</html>
